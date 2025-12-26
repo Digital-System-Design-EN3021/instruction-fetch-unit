@@ -1,4 +1,3 @@
-
 // ============================================================================
 // Instruction Fetch Unit (Top Module)
 // Integrates prefetch buffer and branch predictor
@@ -28,12 +27,18 @@ module instruction_fetch_unit(
     // Control signals
     input wire stall,
     output wire prefetch_full,
-    output wire prefetch_empty
+    output wire prefetch_empty,
+
+    //Exposed prediction signals for verification
+    output wire prediction_valid,
+    output wire prediction,
+    output wire [31:0] predicted_target,
+    output wire [31:0] current_fetch_pc
 );
 
     // Internal signals
-    wire prediction;
-    wire [31:0] predicted_target;
+    wire bp_prediction;
+    wire [31:0] bp_predicted_target;
     wire prediction_valid;
     reg [31:0] current_pc;
     reg [31:0] next_pc;
@@ -44,6 +49,12 @@ module instruction_fetch_unit(
     
     reg flush_pipeline;
     reg branch_mispredicted;
+
+    assign current_fetch_pc = current_pc;
+    assign prediction = bp_prediction;
+    assign predicted_target = bp_predicted_target;
+    assign prediction_valid = prediction_valid;
+
     
     // Instantiate branch predictor
     branch_predictor bp (
@@ -51,9 +62,9 @@ module instruction_fetch_unit(
         .rst_n(rst_n),
         .pc_in(current_pc),
         .predict_enable(mem_read),
-        .prediction(prediction),
-        .predicted_target(predicted_target),
-        .prediction_valid(prediction_valid),
+        .prediction(bp_prediction),
+        .predicted_target(bp_predicted_target),
+        .prediction_valid(bp_prediction_valid),
         .update_enable(branch_resolved),
         .update_pc(branch_pc),
         .update_taken(branch_taken),
@@ -86,9 +97,9 @@ module instruction_fetch_unit(
         if (branch_mispredicted) begin
             // Branch was mispredicted, use correct target
             next_pc = branch_target;
-        end else if (prediction_valid && prediction) begin
+        end else if (bp_prediction_valid && bp_prediction) begin
             // Branch predicted taken
-            next_pc = predicted_target;
+            next_pc = bp_predicted_target;
         end else begin
             // Sequential fetch
             next_pc = current_pc + 4;
@@ -101,12 +112,12 @@ module instruction_fetch_unit(
         flush_pipeline = 1'b0;
         
         if (branch_resolved) begin
-            if (prediction_valid) begin
+            if (bp_prediction_valid) begin
                 // Check if prediction was correct
-                if (branch_taken != prediction) begin
+                if (branch_taken != bp_prediction) begin
                     branch_mispredicted = 1'b1;
                     flush_pipeline = 1'b1;
-                end else if (branch_taken && (branch_target != predicted_target)) begin
+                end else if (branch_taken && (branch_target != bp_predicted_target)) begin
                     branch_mispredicted = 1'b1;
                     flush_pipeline = 1'b1;
                 end
